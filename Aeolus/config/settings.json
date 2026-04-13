@@ -1,0 +1,27 @@
+{
+  "env": {},
+  "permissions": {
+    "allow": [
+      "Bash($XHS_MCP_DIR/scripts/*)",
+      "Bash(curl --noproxy*)",
+      "Bash(ls $XHS_MCP_DIR/resource/*)",
+      "Bash(*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | { read -r file; echo \"$file\" | grep -qE \"^$HOME/\\.claude/skills/[^/]+/SKILL\\.md$\" || exit 0; name=$(grep -m1 '^name:' \"$file\" | sed 's/^name:[[:space:]]*//' ); desc=$(grep -m1 '^description:' \"$file\" | sed 's/^description:[[:space:]]*//' | cut -c1-50); last=$(grep -oE '\\| [0-9]+ \\|' ~/.claude/ai-capabilities.md | grep -oE '[0-9]+' | sort -n | tail -1); next=$((${last:-0}+1)); echo \"| $name | $desc | skill | $next |\" >> ~/.claude/ai-capabilities.md; } 2>/dev/null || true",
+            "statusMessage": "更新能力清单..."
+          }
+        ]
+      }
+    ]
+  },
+  "effortLevel": "medium",
+  "model": "opus"
+}
