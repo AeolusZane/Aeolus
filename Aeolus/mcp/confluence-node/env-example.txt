@@ -1,0 +1,11 @@
+# Confluence 实例配置
+CONF_BASE_URL=https://kms.fineres.com
+# USERNAME可选填
+CONF_USERNAME=your-email@example.com
+CONF_TOKEN=your-personal-access-token
+CONF_SPACE=YOUR_SPACE_KEY
+
+# 注意：
+# 1. CONF_BASE_URL 不要包含尾部斜杠
+# 2. CONF_TOKEN 为 Personal Access Token（PAT）
+# 3. 将此文件复制为 .env 并填入你的实际配置

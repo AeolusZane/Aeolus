@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "confluence": {
+      "command": "node",
+      "args": ["/绝对路径/到/confluence-node/dist/mcp-server.js"],
+      "env": {
+        "CONF_BASE_URL": "https://your-confluence-instance.atlassian.net",
+        "CONF_TOKEN": "your-personal-access-token",
+        "CONF_SPACE": "YOUR_SPACE_KEY"
+      }
+    }
+  }
+}
