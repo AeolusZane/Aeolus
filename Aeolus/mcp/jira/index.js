@@ -269,17 +269,23 @@ server.registerTool(
 server.registerTool(
   "jira_transition",
   {
-    description: "流转 Jira Issue 的状态（如转给测试、关闭等）",
+    description: "流转 Jira Issue 的状态（如转给测试、关闭等），支持同时设置 fields（如开发截止时间）",
     inputSchema: {
       issueKey: z.string().describe("Issue 编号，如 BI-12345"),
       transitionId: z.string().describe("流转 ID，可通过 jira_get_transitions 查询"),
+      fields: z.record(z.unknown()).optional().describe("流转时附带的字段，如 { customfield_10904: '2026-05-31' }"),
     },
   },
-  async ({ issueKey, transitionId }) => {
+  async ({ issueKey, transitionId, fields }) => {
+    const body = {
+      transition: { id: transitionId },
+      ...(fields ? { fields } : {}),
+    };
+
     const res = await fetch(`${JIRA_URL}/rest/api/2/issue/${issueKey}/transitions`, {
       method: "POST",
       headers: HEADERS,
-      body: JSON.stringify({ transition: { id: transitionId } }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
@@ -352,10 +358,11 @@ server.registerTool(
       summary: z.string().describe("任务标题"),
       project: z.string().optional().default("KERNEL").describe("项目 key，默认：KERNEL"),
       issuetype: z
-        .enum(["代码任务", "快速任务", "开发测试任务", "一般BUG", "客户BUG"])
+        .enum(["代码任务", "快速任务", "开发测试任务", "一般BUG", "客户BUG", "研究子任务"])
         .optional()
         .default("代码任务")
         .describe("任务类型，默认：代码任务"),
+      parent: z.string().optional().describe("父任务编号，如 BI-12345，创建子任务时使用"),
       description: z.string().optional().describe("任务描述"),
       fixVersion: z.string().optional().describe("修复版本，如 7.0.8"),
       components: z
@@ -369,12 +376,13 @@ server.registerTool(
       assignee: z.string().optional().default("Aeolus.Zhang").describe("经办人，默认：Aeolus.Zhang"),
     },
   },
-  async ({ summary, project, issuetype, description, fixVersion, components, priority, assignee }) => {
+  async ({ summary, project, issuetype, parent, description, fixVersion, components, priority, assignee }) => {
     const issueTypeName = issuetype ?? "代码任务";
     const fields = {
       project: { key: project ?? "KERNEL" },
       summary,
       issuetype: { name: issueTypeName },
+      ...(parent ? { parent: { key: parent } } : {}),
       ...(priority ? { priority: { name: priority } } : {}),
       // 快速任务的 screen 不支持设置 assignee 字段
       ...(issueTypeName !== "快速任务" ? { assignee: { name: assignee ?? USERNAME } } : {}),
@@ -403,6 +411,68 @@ server.registerTool(
         },
       ],
     };
+  }
+);
+
+server.registerTool(
+  "jira_delete_worklog",
+  {
+    description: "删除 Jira Issue 的工作日志",
+    inputSchema: {
+      issueKey: z.string().describe("Issue 编号，如 BI-12345"),
+      worklogId: z.string().describe("工作日志 ID"),
+    },
+  },
+  async ({ issueKey, worklogId }) => {
+    const res = await fetch(`${JIRA_URL}/rest/api/2/issue/${issueKey}/worklog/${worklogId}`, {
+      method: "DELETE",
+      headers: HEADERS,
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Jira API error ${res.status}: ${text}`);
+    }
+
+    return {
+      content: [{ type: "text", text: `工作日志 ${worklogId} 已从 ${issueKey} 删除` }],
+    };
+  }
+);
+
+server.registerTool(
+  "jira_list_worklogs",
+  {
+    description: "查询 Jira Issue 的工作日志列表（含日志 ID，用于删除）",
+    inputSchema: {
+      issueKey: z.string().describe("Issue 编号，如 BI-12345"),
+    },
+  },
+  async ({ issueKey }) => {
+    const res = await fetch(`${JIRA_URL}/rest/api/2/issue/${issueKey}/worklog`, {
+      headers: HEADERS,
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Jira API error ${res.status}: ${text}`);
+    }
+
+    const data = await res.json();
+    const worklogs = data.worklogs ?? [];
+    if (worklogs.length === 0) {
+      return { content: [{ type: "text", text: `${issueKey} 暂无工作日志` }] };
+    }
+
+    const lines = [`=== ${issueKey} 工作日志（共 ${worklogs.length} 条）===`];
+    for (const w of worklogs) {
+      const author = w.author?.displayName ?? "-";
+      const started = w.started?.slice(0, 10) ?? "-";
+      const timeSpent = w.timeSpent ?? "-";
+      const comment = w.comment ? `  备注: ${w.comment.slice(0, 100)}` : "";
+      lines.push(`  ID: ${w.id}  [${author}] ${started}  ${timeSpent}${comment}`);
+    }
+    return { content: [{ type: "text", text: lines.join("\n") }] };
   }
 );
 
