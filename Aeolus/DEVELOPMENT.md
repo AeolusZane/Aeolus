@@ -63,7 +63,25 @@ load_env "$AEOLUS_DIR/credentials/<名称>.env"
 }
 ```
 
-### 5. 更新 setup-work-mcp Skill（可选）
+### 5. 更新 quick-install.sh
+
+在 `quick-install.sh` 中做两处修改：
+
+**a) 凭证模板** — 在 `export FIGMA_API_KEY=""` 后追加：
+
+```bash
+# GitHub
+export GITHUB_TOKEN=""
+```
+
+**b) write_cred 调用** — 在其他 `write_cred` 后追加：
+
+```bash
+write_cred "git.env" \
+  "GITHUB_TOKEN=${GITHUB_TOKEN}"
+```
+
+### 6. 更新 setup-work-mcp Skill（可选）
 
 如果该 MCP 属于"帆软工作用 MCP"，更新 `Aeolus/skills/work/setup-work-mcp/SKILL.md` 的 description 和完成提示，把新 MCP 名称加上。
 
@@ -109,4 +127,5 @@ install.sh 会自动扫描 `Aeolus/skills/` 下所有包含 `SKILL.md` 的目录
 | `Aeolus/credentials/<名称>.env` | 该 MCP 的凭证（敏感信息） |
 | `Aeolus/config/work.mcp.json` | 工作 MCP 配置模板 |
 | `Aeolus/install.sh` | 安装脚本，加载凭证并生成最终配置 |
+| `quick-install.sh` | 一键安装脚本（含凭证模板和 write_cred） |
 | `Aeolus/skills/<分类>/<名称>/SKILL.md` | Skill 定义 |

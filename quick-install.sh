@@ -8,7 +8,7 @@
 #   AEOLUS_CREDS_FILE=~/.aeolus-creds.env bash <(curl -fsSL ...)
 #
 # 用法 3 — 纯自动化（通过环境变量）:
-#   JIRA_TOKEN=xxx BITBUCKET_TOKEN=yyy bash <(curl -fsSL ...)
+#   JIRA_TOKEN=xxx BITBUCKET_TOKEN=yyy GITHUB_TOKEN=zzz bash <(curl -fsSL ...)
 #
 # 可用环境变量:
 #   AEOLUS_INSTALL_DIR   安装目录，默认 $HOME/Aeolus
@@ -60,6 +60,9 @@ export CONF_SPACE=""
 
 # Figma
 export FIGMA_API_KEY=""
+
+# GitHub
+export GITHUB_TOKEN=""
 EOF
   chmod 600 "$CREDS_FILE"
   ok "凭证模板已生成: $CREDS_FILE"
@@ -156,6 +159,9 @@ write_cred "confluence.env" \
 
 write_cred "figma.env" \
   "FIGMA_API_KEY=${FIGMA_API_KEY}"
+
+write_cred "git.env" \
+  "GITHUB_TOKEN=${GITHUB_TOKEN}"
 
 # ── 执行 install.sh ───────────────────────────────────
 echo ""

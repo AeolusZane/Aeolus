@@ -57,25 +57,28 @@ curl -fsSL https://raw.githubusercontent.com/AeolusZane/aeolus/main/quick-instal
 aeolus-installer/
 ├── README.md
 ├── quick-install.sh       # 一键安装脚本（curl | bash）
-├── Aeolus/                # 实际安装内容（可单独作为 git 仓库分发）
-│   ├── install.sh         # 本地安装脚本（由 quick-install.sh 调用）
-│   ├── upgrade.sh         # 升级脚本
-│   ├── uninstall.sh       # 卸载脚本
-│   ├── config/            # settings.json、ai-capabilities.md 等配置
-│   ├── credentials/       # 凭证文件（本地，不提交 git）
-│   ├── mcp/               # MCP 服务（jira、bitbucket、confluence 等）
-│   └── skills/            # Claude Code Skills（work/、personal/ 分类）
-└── aeolus-installer/      # Electron GUI 安装程序（可选）
-    ├── main.js
-    ├── preload.js
-    ├── renderer/
-    └── package.json
-```
-
-### 开发
-
-```bash
-npm install
-npm start          # 开发模式运行
-npm run build      # 构建 .app（输出到 dist/）
+├── .gitignore
+├── .claude/               # Claude Code 本地配置
+└── Aeolus/                # 实际安装内容
+    ├── install.sh         # 本地安装脚本（由 quick-install.sh 调用）
+    ├── upgrade.sh         # 升级脚本
+    ├── uninstall.sh       # 卸载脚本
+    ├── DEVELOPMENT.md     # 开发指南：如何新增 MCP / Skill
+    ├── config/            # settings.json、ai-capabilities.md、work.mcp.json 等配置模板
+    ├── credentials/       # 凭证文件（本地，不提交 git）
+    │   ├── jira.env
+    │   ├── bitbucket.env
+    │   ├── confluence.env
+    │   ├── figma.env
+    │   └── git.env
+    ├── mcp/               # MCP 服务
+    │   ├── jira/
+    │   ├── bitbucket/
+    │   ├── confluence-node/
+    │   ├── claw-mcp/
+    │   ├── git-mcp/
+    │   └── xiaohongshu/
+    └── skills/            # Claude Code Skills
+        ├── work/          # 工作类（jira-bugs、fix-bug、submit-pr 等）
+        └── personal/      # 个人类（notify、health、finance 等）
 ```
