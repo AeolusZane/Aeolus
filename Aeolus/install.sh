@@ -155,6 +155,7 @@ load_env "$AEOLUS_DIR/credentials/figma.env"
 load_env "$AEOLUS_DIR/credentials/jira.env"
 load_env "$AEOLUS_DIR/credentials/confluence.env"
 load_env "$AEOLUS_DIR/credentials/bitbucket.env"
+load_env "$AEOLUS_DIR/credentials/git.env"
 
 cat > "$AEOLUS_DIR/config/work.mcp.json" << EOF
 {
@@ -200,6 +201,14 @@ cat > "$AEOLUS_DIR/config/work.mcp.json" << EOF
         "CONF_BASE_URL": "${CONF_BASE_URL}",
         "CONF_TOKEN": "${CONF_TOKEN}",
         "CONF_SPACE": "${CONF_SPACE}"
+      }
+    },
+    "git-mcp": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["$AEOLUS_DIR/mcp/git-mcp/index.js"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
       }
     }
   }
