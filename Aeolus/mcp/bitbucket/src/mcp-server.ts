@@ -319,6 +319,129 @@ async function needsWorkPR(args: { project: string; repo: string; prId: number }
   };
 }
 
+async function listProjects(args: { limit?: number; start?: number }) {
+  const { limit = 25, start = 0 } = args;
+  const res = await api.get("/projects", { params: { limit, start } });
+  const { values, isLastPage, nextPageStart } = res.data;
+  return {
+    projects: values.map((p: { key: string; name: string; description?: string; type: string; links?: { self?: Array<{ href?: string }> } }) => ({
+      key: p.key,
+      name: p.name,
+      description: p.description,
+      type: p.type,
+      link: p.links?.self?.[0]?.href,
+    })),
+    isLastPage,
+    nextPageStart,
+  };
+}
+
+async function listRepos(args: { project: string; limit?: number; start?: number }) {
+  const { project, limit = 25, start = 0 } = args;
+  const res = await api.get(`/projects/${project}/repos`, { params: { limit, start } });
+  const { values, isLastPage, nextPageStart } = res.data;
+  return {
+    repos: values.map((r: { slug: string; name: string; description?: string; state: string; forkable: boolean; links?: { self?: Array<{ href?: string }>; clone?: Array<{ href?: string; name?: string }> } }) => ({
+      slug: r.slug,
+      name: r.name,
+      description: r.description,
+      state: r.state,
+      forkable: r.forkable,
+      link: r.links?.self?.[0]?.href,
+      cloneUrls: r.links?.clone?.map((c) => ({ name: c.name, href: c.href })),
+    })),
+    isLastPage,
+    nextPageStart,
+  };
+}
+
+async function getRepo(args: { project: string; repo: string }) {
+  const { project, repo } = args;
+  const res = await api.get(`/projects/${project}/repos/${repo}`);
+  const r = res.data;
+  return {
+    id: r.id,
+    slug: r.slug,
+    name: r.name,
+    description: r.description,
+    state: r.state,
+    forkable: r.forkable,
+    project: { key: r.project?.key, name: r.project?.name },
+    link: r.links?.self?.[0]?.href,
+    cloneUrls: r.links?.clone?.map((c: { name?: string; href?: string }) => ({ name: c.name, href: c.href })),
+  };
+}
+
+async function listBranches(args: { project: string; repo: string; filterText?: string; limit?: number; start?: number }) {
+  const { project, repo, filterText, limit = 25, start = 0 } = args;
+  const res = await api.get(`/projects/${project}/repos/${repo}/branches`, {
+    params: { filterText, limit, start },
+  });
+  const { values, isLastPage, nextPageStart } = res.data;
+  return {
+    branches: values.map((b: { id: string; displayId: string; latestCommit: string; isDefault: boolean }) => ({
+      id: b.id,
+      displayId: b.displayId,
+      latestCommit: b.latestCommit,
+      isDefault: b.isDefault,
+    })),
+    isLastPage,
+    nextPageStart,
+  };
+}
+
+async function createBranch(args: { project: string; repo: string; name: string; startPoint: string }) {
+  const { project, repo, name, startPoint } = args;
+  const res = await api.post(`/projects/${project}/repos/${repo}/branches`, {
+    name,
+    startPoint,
+  });
+  return {
+    id: res.data.id,
+    displayId: res.data.displayId,
+    latestCommit: res.data.latestCommit,
+    isDefault: res.data.isDefault,
+  };
+}
+
+async function deleteBranch(args: { project: string; repo: string; name: string }) {
+  const { project, repo, name } = args;
+  await api.delete(`/projects/${project}/repos/${repo}/branches`, {
+    data: { name: `refs/heads/${name}`, dryRun: false },
+  });
+  return { success: true, message: `Branch "${name}" deleted.` };
+}
+
+async function listCommits(args: { project: string; repo: string; branch?: string; limit?: number; start?: number }) {
+  const { project, repo, branch, limit = 25, start = 0 } = args;
+  const res = await api.get(`/projects/${project}/repos/${repo}/commits`, {
+    params: { until: branch, limit, start },
+  });
+  const { values, isLastPage, nextPageStart } = res.data;
+  return {
+    commits: values.map((c: { id: string; displayId: string; message: string; authorTimestamp: number; author?: { name?: string; emailAddress?: string } }) => ({
+      id: c.id,
+      displayId: c.displayId,
+      message: c.message,
+      author: c.author?.name,
+      authorEmail: c.author?.emailAddress,
+      date: new Date(c.authorTimestamp).toISOString(),
+    })),
+    isLastPage,
+    nextPageStart,
+  };
+}
+
+async function getFileContent(args: { project: string; repo: string; path: string; branch?: string }) {
+  const { project, repo, path: filePath, branch } = args;
+  const res = await api.get(`/projects/${project}/repos/${repo}/raw/${filePath}`, {
+    params: branch ? { at: branch } : {},
+    responseType: "text",
+    transformResponse: (data) => data,
+  });
+  return { content: res.data, path: filePath };
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type PullRequest = {
@@ -514,6 +637,114 @@ const tools = [
       required: ["project", "repo", "prId"],
     },
   },
+  {
+    name: "bitbucket_list_projects",
+    description: "列出所有 Bitbucket 项目",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "返回条数，默认 25" },
+        start: { type: "number", description: "分页起始，默认 0" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "bitbucket_list_repos",
+    description: "列出指定项目下的所有仓库",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Bitbucket 项目 key（大写，如 MYPROJ）" },
+        limit: { type: "number", description: "返回条数，默认 25" },
+        start: { type: "number", description: "分页起始，默认 0" },
+      },
+      required: ["project"],
+    },
+  },
+  {
+    name: "bitbucket_get_repo",
+    description: "获取指定仓库的详细信息（包括克隆地址等）",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Bitbucket 项目 key" },
+        repo: { type: "string", description: "仓库 slug" },
+      },
+      required: ["project", "repo"],
+    },
+  },
+  {
+    name: "bitbucket_list_branches",
+    description: "列出仓库的所有分支",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Bitbucket 项目 key" },
+        repo: { type: "string", description: "仓库 slug" },
+        filterText: { type: "string", description: "按名称过滤分支（可选）" },
+        limit: { type: "number", description: "返回条数，默认 25" },
+        start: { type: "number", description: "分页起始，默认 0" },
+      },
+      required: ["project", "repo"],
+    },
+  },
+  {
+    name: "bitbucket_create_branch",
+    description: "在仓库中创建新分支",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Bitbucket 项目 key" },
+        repo: { type: "string", description: "仓库 slug" },
+        name: { type: "string", description: "新分支名称（如 feature/my-feature）" },
+        startPoint: { type: "string", description: "基于哪个分支/commit 创建（如 main 或 commit hash）" },
+      },
+      required: ["project", "repo", "name", "startPoint"],
+    },
+  },
+  {
+    name: "bitbucket_delete_branch",
+    description: "删除仓库中的指定分支",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Bitbucket 项目 key" },
+        repo: { type: "string", description: "仓库 slug" },
+        name: { type: "string", description: "要删除的分支名（如 feature/my-feature）" },
+      },
+      required: ["project", "repo", "name"],
+    },
+  },
+  {
+    name: "bitbucket_list_commits",
+    description: "列出仓库的提交历史",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Bitbucket 项目 key" },
+        repo: { type: "string", description: "仓库 slug" },
+        branch: { type: "string", description: "分支名（可选，默认主分支）" },
+        limit: { type: "number", description: "返回条数，默认 25" },
+        start: { type: "number", description: "分页起始，默认 0" },
+      },
+      required: ["project", "repo"],
+    },
+  },
+  {
+    name: "bitbucket_get_file_content",
+    description: "获取仓库中某个文件的内容",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Bitbucket 项目 key" },
+        repo: { type: "string", description: "仓库 slug" },
+        path: { type: "string", description: "文件路径（如 src/index.ts）" },
+        branch: { type: "string", description: "分支名（可选，默认主分支）" },
+      },
+      required: ["project", "repo", "path"],
+    },
+  },
 ];
 
 function createServer_(): Server {
@@ -548,6 +779,22 @@ function createServer_(): Server {
         result = await addInlineComment(args as Parameters<typeof addInlineComment>[0]);
       } else if (name === "bitbucket_get_pr_diff") {
         result = await getPRDiff(args as Parameters<typeof getPRDiff>[0]);
+      } else if (name === "bitbucket_list_projects") {
+        result = await listProjects(args as Parameters<typeof listProjects>[0]);
+      } else if (name === "bitbucket_list_repos") {
+        result = await listRepos(args as Parameters<typeof listRepos>[0]);
+      } else if (name === "bitbucket_get_repo") {
+        result = await getRepo(args as Parameters<typeof getRepo>[0]);
+      } else if (name === "bitbucket_list_branches") {
+        result = await listBranches(args as Parameters<typeof listBranches>[0]);
+      } else if (name === "bitbucket_create_branch") {
+        result = await createBranch(args as Parameters<typeof createBranch>[0]);
+      } else if (name === "bitbucket_delete_branch") {
+        result = await deleteBranch(args as Parameters<typeof deleteBranch>[0]);
+      } else if (name === "bitbucket_list_commits") {
+        result = await listCommits(args as Parameters<typeof listCommits>[0]);
+      } else if (name === "bitbucket_get_file_content") {
+        result = await getFileContent(args as Parameters<typeof getFileContent>[0]);
       } else {
         throw new Error(`Unknown tool: ${name}`);
       }
