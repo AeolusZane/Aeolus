@@ -72,35 +72,6 @@ aeolus-installer/
     └── package.json
 ```
 
----
-
-## GUI 安装程序（Electron）
-
-> 用户拿到单个 `.app` 文件即可在任意 Mac 上完成安装，适合非技术用户分发。
-
-### 设计说明
-
-| 功能 | 处理方式 |
-|------|----------|
-| Skill 归类 | 在 `Aeolus/skills/` 下按 `work/`、`personal/` 分类，`install.sh` 拍平软链接到 `~/.claude/skills/` |
-| MCP 服务管理 | 5 个 MCP 各自独立目录，`install.sh` 自动检测 `package.json` 或 `requirements.txt` 安装依赖 |
-| 凭证配置 | Installer GUI 填写凭证 → 内存暂存 → 复制到目标路径后写入 `.env` 文件，不写入打包资源 |
-| MCP 配置生成 | `install.sh` 读取凭证 `.env`，模板替换生成 `work.mcp.json` |
-| settings.json 冲突 | 检测已有文件是否不同，弹窗让用户选择覆盖（自动备份 `.bak`）或跳过 |
-| 环境变量 | 写入 `~/.zshenv`，设置 `AEOLUS_DIR`、`XHS_MCP_DIR`、`CLAUDE_WORK_DIR` |
-
-### 安装流程
-
-```
-.app 启动
-  → Welcome 页
-  → 选择安装路径 + 填写凭证（可跳过）
-  → 复制 Aeolus 到目标路径
-  → 写入凭证 .env 文件
-  → 执行 install.sh
-  → Done 页（显示 Skill/MCP 数量，可选删除安装程序）
-```
-
 ### 开发
 
 ```bash

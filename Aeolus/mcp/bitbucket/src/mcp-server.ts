@@ -29,6 +29,14 @@ const api = axios.create({
   },
 });
 
+const defaultReviewersApi = axios.create({
+  baseURL: `${BITBUCKET_BASE_URL.replace(/\/$/, "")}/rest/default-reviewers/1.0`,
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${BITBUCKET_TOKEN}`,
+  },
+});
+
 function formatError(err: unknown): string {
   if (err instanceof AxiosError) {
     const data = err.response?.data;
@@ -134,6 +142,143 @@ async function addComment(args: {
     text: res.data.text,
     author: res.data.author?.displayName ?? res.data.author?.name,
     createdDate: new Date(res.data.createdDate).toISOString(),
+  };
+}
+
+async function createPR(args: {
+  project: string;
+  repo: string;
+  title: string;
+  fromBranch: string;
+  toBranch: string;
+  description?: string;
+  reviewers?: string[];
+}) {
+  const { project, repo, title, fromBranch, toBranch, description, reviewers = [] } = args;
+
+  // 获取 repo ID（default-reviewers 接口需要）
+  const repoRes = await api.get(`/projects/${project}/repos/${repo}`);
+  const repoId: number = repoRes.data.id;
+
+  // 查询平台配置的默认 reviewer
+  let defaultReviewerNames: string[] = [];
+  try {
+    const drRes = await defaultReviewersApi.get(`/projects/${project}/repos/${repo}/reviewers`, {
+      params: {
+        sourceRefId: `refs/heads/${fromBranch}`,
+        targetRefId: `refs/heads/${toBranch}`,
+        sourceRepoId: repoId,
+        targetRepoId: repoId,
+      },
+    });
+    defaultReviewerNames = (drRes.data as Array<{ name: string }>).map((u) => u.name);
+  } catch {
+    // 无默认 reviewer 配置时忽略
+  }
+
+  // 合并去重
+  const allReviewerNames = [...new Set([...defaultReviewerNames, ...reviewers])];
+
+  const body = {
+    title,
+    description,
+    fromRef: {
+      id: `refs/heads/${fromBranch}`,
+      repository: { slug: repo, project: { key: project } },
+    },
+    toRef: {
+      id: `refs/heads/${toBranch}`,
+      repository: { slug: repo, project: { key: project } },
+    },
+    reviewers: allReviewerNames.map((name) => ({ user: { name } })),
+  };
+  const res = await api.post(`/projects/${project}/repos/${repo}/pull-requests`, body);
+  const pr: PullRequest = res.data;
+  return {
+    id: pr.id,
+    title: pr.title,
+    description: pr.description,
+    state: pr.state,
+    fromBranch: pr.fromRef?.displayId,
+    toBranch: pr.toRef?.displayId,
+    reviewers: allReviewerNames,
+    link: pr.links?.self?.[0]?.href,
+  };
+}
+
+async function addInlineComment(args: {
+  project: string;
+  repo: string;
+  prId: number;
+  text: string;
+  path: string;
+  line: number;
+  lineType?: "ADDED" | "REMOVED" | "CONTEXT";
+  fileType?: "TO" | "FROM";
+  parentCommentId?: number;
+}) {
+  const { project, repo, prId, text, path: filePath, line, lineType = "ADDED", fileType = "TO", parentCommentId } = args;
+  const body: Record<string, unknown> = {
+    text,
+    anchor: {
+      line,
+      lineType,
+      fileType,
+      path: filePath,
+      srcPath: filePath,
+    },
+  };
+  if (parentCommentId) {
+    body.parent = { id: parentCommentId };
+  }
+  const res = await api.post(
+    `/projects/${project}/repos/${repo}/pull-requests/${prId}/comments`,
+    body
+  );
+  return {
+    id: res.data.id,
+    text: res.data.text,
+    author: res.data.author?.displayName ?? res.data.author?.name,
+    createdDate: new Date(res.data.createdDate).toISOString(),
+    anchor: res.data.anchor,
+  };
+}
+
+async function getPRDiff(args: { project: string; repo: string; prId: number; path?: string }) {
+  const { project, repo, prId, path: filePath } = args;
+  const url = filePath
+    ? `/projects/${project}/repos/${repo}/pull-requests/${prId}/diff/${filePath}`
+    : `/projects/${project}/repos/${repo}/pull-requests/${prId}/diff`;
+  const res = await api.get(url);
+  const diffs = (res.data.diffs ?? []) as Array<{
+    source?: { toString?: string };
+    destination?: { toString?: string };
+    hunks?: Array<{
+      sourceLine: number;
+      destinationLine: number;
+      segments: Array<{
+        type: string;
+        lines: Array<{ source: number; destination: number; line: string; truncated?: boolean }>;
+      }>;
+    }>;
+  }>;
+  return {
+    diffs: diffs.map((d) => ({
+      sourcePath: d.source?.toString,
+      destinationPath: d.destination?.toString,
+      hunks: (d.hunks ?? []).map((h) => ({
+        sourceLine: h.sourceLine,
+        destinationLine: h.destinationLine,
+        segments: h.segments.map((s) => ({
+          type: s.type,
+          lines: s.lines.map((l) => ({
+            source: l.source,
+            destination: l.destination,
+            line: l.line,
+          })),
+        })),
+      })),
+    })),
   };
 }
 
@@ -269,6 +414,68 @@ const tools = [
     },
   },
   {
+    name: "bitbucket_create_pr",
+    description: "在指定仓库创建一个新的 Pull Request",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Bitbucket 项目 key（大写，如 MYPROJ）" },
+        repo: { type: "string", description: "仓库 slug" },
+        title: { type: "string", description: "PR 标题" },
+        fromBranch: { type: "string", description: "源分支名（如 feature/my-feature）" },
+        toBranch: { type: "string", description: "目标分支名（如 main）" },
+        description: { type: "string", description: "PR 描述（可选）" },
+        reviewers: {
+          type: "array",
+          items: { type: "string" },
+          description: "Reviewer 的用户名列表（可选，如 [\"zhangsan\", \"lisi\"]）",
+        },
+      },
+      required: ["project", "repo", "title", "fromBranch", "toBranch"],
+    },
+  },
+  {
+    name: "bitbucket_add_inline_comment",
+    description: "在 PR 的指定文件行上添加行内批注（inline comment）",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Bitbucket 项目 key" },
+        repo: { type: "string", description: "仓库 slug" },
+        prId: { type: "number", description: "PR ID" },
+        text: { type: "string", description: "批注内容" },
+        path: { type: "string", description: "文件路径，如 src/components/Foo.tsx" },
+        line: { type: "number", description: "行号" },
+        lineType: {
+          type: "string",
+          enum: ["ADDED", "REMOVED", "CONTEXT"],
+          description: "行类型：ADDED（新增行）、REMOVED（删除行）、CONTEXT（上下文行），默认 ADDED",
+        },
+        fileType: {
+          type: "string",
+          enum: ["TO", "FROM"],
+          description: "文件版本：TO（新版本）、FROM（旧版本），默认 TO",
+        },
+        parentCommentId: { type: "number", description: "回复的父评论 ID（可选）" },
+      },
+      required: ["project", "repo", "prId", "text", "path", "line"],
+    },
+  },
+  {
+    name: "bitbucket_get_pr_diff",
+    description: "获取 PR 的 diff 信息，查看变更文件和行号，用于确定行内批注的位置",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Bitbucket 项目 key" },
+        repo: { type: "string", description: "仓库 slug" },
+        prId: { type: "number", description: "PR ID" },
+        path: { type: "string", description: "只获取指定文件的 diff（可选）" },
+      },
+      required: ["project", "repo", "prId"],
+    },
+  },
+  {
     name: "bitbucket_approve_pr",
     description: "批准（Approve）一个 PR",
     inputSchema: {
@@ -335,6 +542,12 @@ function createServer_(): Server {
         result = await unapprovePR(args as Parameters<typeof unapprovePR>[0]);
       } else if (name === "bitbucket_needs_work_pr") {
         result = await needsWorkPR(args as Parameters<typeof needsWorkPR>[0]);
+      } else if (name === "bitbucket_create_pr") {
+        result = await createPR(args as Parameters<typeof createPR>[0]);
+      } else if (name === "bitbucket_add_inline_comment") {
+        result = await addInlineComment(args as Parameters<typeof addInlineComment>[0]);
+      } else if (name === "bitbucket_get_pr_diff") {
+        result = await getPRDiff(args as Parameters<typeof getPRDiff>[0]);
       } else {
         throw new Error(`Unknown tool: ${name}`);
       }

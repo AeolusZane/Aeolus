@@ -150,6 +150,85 @@ server.registerTool(
 );
 
 server.registerTool(
+  "jira_link_issues",
+  {
+    description: "创建两个 Jira Issue 之间的链接关系，如标记重复、关联、阻塞等",
+    inputSchema: {
+      fromIssue: z.string().describe("源 Issue 编号，如 BI-196031"),
+      toIssue: z.string().describe("目标 Issue 编号，如 BI-195831"),
+      linkType: z.string().optional().default("重复").describe("链接类型，默认：重复。可选：合并、相关任务、开发相关等"),
+    },
+  },
+  async ({ fromIssue, toIssue, linkType }) => {
+    const body = {
+      type: { name: linkType },
+      inwardIssue: { key: fromIssue },
+      outwardIssue: { key: toIssue },
+    };
+
+    const res = await fetch(`${JIRA_URL}/rest/api/2/issueLink`, {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Jira API error ${res.status}: ${text}`);
+    }
+
+    return {
+      content: [{ type: "text", text: `已将 ${fromIssue} 链接到 ${toIssue}（类型: ${linkType}）` }],
+    };
+  }
+);
+
+server.registerTool(
+  "jira_search",
+  {
+    description: "用自定义 JQL 查询 Jira Issues，支持跨版本、跨状态搜索",
+    inputSchema: {
+      jql: z.string().describe("JQL 查询语句，如 assignee = currentUser() AND issuetype = Bug"),
+      maxResults: z.number().optional().default(100).describe("最大返回条数"),
+      fields: z.string().optional().default("summary,status,priority,updated,components,fixVersions").describe("返回字段，逗号分隔"),
+    },
+  },
+  async ({ jql, maxResults, fields }) => {
+    const params = new URLSearchParams({
+      jql,
+      maxResults: String(maxResults),
+      fields,
+    });
+
+    const res = await fetch(`${JIRA_URL}/rest/api/2/search?${params}`, { headers: HEADERS });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Jira API error ${res.status}: ${text}`);
+    }
+
+    const data = await res.json();
+    const issues = data.issues ?? [];
+    const total = data.total ?? 0;
+
+    if (issues.length === 0) {
+      return { content: [{ type: "text", text: `查询无结果（共 ${total} 条）` }] };
+    }
+
+    const lines = [`=== 查询结果，共 ${total} 条（显示 ${issues.length} 条）===\n`];
+    for (const issue of issues) {
+      const f = issue.fields;
+      const status = f.status?.name ?? "-";
+      const priority = f.priority?.name ?? "-";
+      const version = f.fixVersions?.map((v) => v.name).join(", ") || "-";
+      const updated = f.updated ? f.updated.slice(0, 10) : "-";
+      lines.push(`[${issue.key}] (${status}) [${priority}] [v${version}] ${f.summary ?? ""}  (${updated})`);
+    }
+
+    return { content: [{ type: "text", text: lines.join("\n") }] };
+  }
+);
+
+server.registerTool(
   "jira_get_issue",
   {
     description: "按编号查询 Jira 单条 Bug 的详细信息",
@@ -273,13 +352,17 @@ server.registerTool(
     inputSchema: {
       issueKey: z.string().describe("Issue 编号，如 BI-12345"),
       transitionId: z.string().describe("流转 ID，可通过 jira_get_transitions 查询"),
-      fields: z.record(z.unknown()).optional().describe("流转时附带的字段，如 { customfield_10904: '2026-05-31' }"),
+      dueDate: z.string().optional().describe("开发截止时间，格式 YYYY-MM-DD，如 2026-05-31"),
     },
   },
-  async ({ issueKey, transitionId, fields }) => {
+  async ({ issueKey, transitionId, dueDate }) => {
+    // Jira 要求完整 ISO 8601 格式，自动补全时区
+    const dueDateFull = dueDate
+      ? /T/.test(dueDate) ? dueDate : `${dueDate}T00:00:00.000+0800`
+      : undefined;
     const body = {
       transition: { id: transitionId },
-      ...(fields ? { fields } : {}),
+      ...(dueDateFull ? { fields: { customfield_10904: dueDateFull } } : {}),
     };
 
     const res = await fetch(`${JIRA_URL}/rest/api/2/issue/${issueKey}/transitions`, {
