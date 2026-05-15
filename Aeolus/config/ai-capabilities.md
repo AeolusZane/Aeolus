@@ -28,3 +28,7 @@
 | ai-capabilities | 查看或新增 AI 能力列表 | skill | 13 |
 | health | 读取体检报告生成健康计划，查看/更新健康计划和饮食计划 | skill | 17 |
 | notify | 设置/查看/关闭定时通知，通过 Mac crontab 推送系统通知 | skill | 18 |
+| create-dev-docs | 给 KMS 父页面 ID + Jira 任务编号列表，批量创建开发文档（含标题一和 Jira 宏） | skill | 19 |
+| draft-spec | 起草 spec/requirements.md 文档，帮助用户进行 spec 模式开发 | skill | 20 |
+| spec-split | 读取 spec/requirements.md 中的功能需求和 Figma 交互链接，按功能模块拆分生成独立 md 文件 | skill | 21 |
+| agent-browser | 通过命令行控制浏览器，实现导航、登录、表单填写、截图等自动化操作 | skill | 22 |
